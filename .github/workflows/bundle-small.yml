@@ -18,7 +18,7 @@ jobs:
           repo=os.environ['REPO']; tag='client-20261121'
           release=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/releases/tags/{tag}']))
           small=[p for p in release['assets'] if p['name'].endswith('.pak') and p['size']<10*1024**2]
-          assert len(small)==49
+          assert len(small)==47
           name='MIDWAY-small-mods.zip'
           with zipfile.ZipFile(name,'w',compression=zipfile.ZIP_STORED) as z:
               for asset in sorted(small,key=lambda p:p['name']):
