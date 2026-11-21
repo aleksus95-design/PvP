@@ -1,0 +1,32 @@
+name: Bundle small client PAKs
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Build deterministic transport bundle
+        shell: python
+        run: |
+          import hashlib,json,os,pathlib,subprocess,zipfile
+          repo=os.environ['REPO']; tag='client-20261121'
+          release=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/releases/tags/{tag}']))
+          small=[p for p in release['assets'] if p['name'].endswith('.pak') and p['size']<10*1024**2]
+          assert len(small)==49
+          name='MIDWAY-small-mods.zip'
+          with zipfile.ZipFile(name,'w',compression=zipfile.ZIP_STORED) as z:
+              for asset in sorted(small,key=lambda p:p['name']):
+                  subprocess.run(['gh','release','download',tag,'--repo',repo,'--pattern',asset['name']],check=True)
+                  path=pathlib.Path(asset['name']);data=path.read_bytes()
+                  assert len(data)==asset['size'] and 'sha256:'+hashlib.sha256(data).hexdigest()==asset['digest']
+                  info=zipfile.ZipInfo(asset['name'],date_time=(2026,11,21,0,0,0));info.compress_type=zipfile.ZIP_STORED
+                  z.writestr(info,data);path.unlink()
+          assert pathlib.Path(name).stat().st_size>10*1024**2
+          subprocess.run(['gh','release','upload',tag,name,'--repo',repo],check=True)
+          print('Verified small-file bundle uploaded.')
