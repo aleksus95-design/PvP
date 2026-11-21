@@ -1,0 +1,44 @@
+name: Import verified client PAKs
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      max-parallel: 4
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      SHARD: ${{ matrix.shard }}
+    steps:
+      - name: Copy verified assets from published MIDWAY snapshot
+        shell: python
+        run: |
+          import hashlib,json,os,pathlib,subprocess,time,urllib.request
+          repo=os.environ['REPO']; shard=int(os.environ['SHARD']); tag='client-20261121'
+          url='https://github.com/aleksus95-design/updaterwild/releases/download/midway-plain-client-20261120/midway_plain_manifest.json'
+          raw=urllib.request.urlopen(url,timeout=60).read()
+          assert hashlib.sha256(raw).hexdigest()=='35756f535ecef872b0ec9add2061ee77043860e71554e14496a3ffd023de2bdc'
+          items=json.loads(raw)['files']; assert len(items)==79
+          release=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/releases/tags/{tag}']))
+          assets={a['name']:a for a in release['assets']}
+          for i,item in enumerate(items):
+              if i%4!=shard:continue
+              name=item['name']
+              if name in assets:
+                  assert assets[name]['size']==item['size'] and assets[name]['digest']=='sha256:'+item['sha256']
+                  print('Already verified:',name,flush=True);continue
+              assert pathlib.Path(name).name==name
+              subprocess.run(['curl','--fail','--location','--retry','3','--connect-timeout','15','--max-time','300','--output',name,item['download_url']],check=True)
+              data=pathlib.Path(name)
+              assert data.stat().st_size==item['size'] and hashlib.sha256(data.read_bytes()).hexdigest()==item['sha256']
+              subprocess.run(['gh','release','upload',tag,name,'--repo',repo],check=True)
+              data.unlink()
+              print('Copied and verified:',name,flush=True)
+              time.sleep(1)
